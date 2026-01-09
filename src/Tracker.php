@@ -113,6 +113,7 @@ class Tracker
         // Check if session exists in cookie
         if (isset($_COOKIE[$cookieName])) {
             $sessionId = (int) $_COOKIE[$cookieName];
+            error_log('XCorch Tracker: Using existing session from cookie - ID: ' . $sessionId);
             // Verify session still exists by trying to use it
             return $sessionId;
         }
@@ -170,6 +171,8 @@ class Tracker
         $now = date('c'); // ISO 8601 format
 
         $payload = [
+            'api_key' => $this->apiKey,
+            'site_code' => $this->websiteCode,
             'session_id' => $sessionId,
             'entry' => $entry ?? $now,
             'current_page' => $currentPage
@@ -192,6 +195,8 @@ class Tracker
         // Log for debugging
         if (!$result['success']) {
             error_log('XCorch Tracker: View recording failed. Payload: ' . json_encode($payload) . ' Response: ' . json_encode($result));
+        } else {
+            error_log('XCorch Tracker: View recorded successfully for session ' . $sessionId);
         }
         
         return $result;
