@@ -5,10 +5,11 @@
   "license": "MIT",
   "autoload": {
     "psr-4": {
-      "xcorch\\HelloWorld\\": "src/"
+      "xcorch\\Tracker\\": "src/"
     }
   },
   "require": {
-    "php": ">=8.0"
+    "php": ">=8.0",
+    "vlucas/phpdotenv": "^5.5"
   }
 }
