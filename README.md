@@ -21,6 +21,10 @@ Your API key and website code can be found in your XCorch app or website dashboa
 
 ## Usage
 
+### Basic Tracking
+
+Simply call the `track()` method on each page to automatically track page views:
+
 ```php
 <?php
 
@@ -29,8 +33,21 @@ require 'vendor/autoload.php';
 use xcorch\Tracker\Tracker;
 
 $tracker = new Tracker();
+$tracker->track();
+```
 
-// Validate your API key and website code
+The `track()` method will:
+- Check for an existing session in cookies
+- Create a new session if one doesn't exist
+- Record the page view with source URL (domain only, e.g., `google.com`)
+- Automatically detect device type (mobile/desktop)
+
+### Validate Credentials
+
+You can validate your API key and website code:
+
+```php
+$tracker = new Tracker();
 $result = $tracker->validateCredentials();
 
 if ($result['valid']) {
