@@ -9,6 +9,19 @@ class Tracker
     private string $apiKey;
     private string $websiteCode;
 
+    /**
+     * Gets the base URL for API requests
+     */
+    private function getBaseUrl(): string
+    {
+        try {
+            return Variables::BASE_URL;
+        } catch (\Error $e) {
+            // Fallback if Variables class is not found (autoloader needs regeneration)
+            return 'http://localhost:8000';
+        }
+    }
+
     public function __construct()
     {
         // Try to load .env file from the project root (where composer.json is)
@@ -120,7 +133,7 @@ class Tracker
      */
     private function createSession(?string $sourceUrl = null, ?string $deviceType = null): array
     {
-        $baseUrl = Variables::BASE_URL;
+        $baseUrl = $this->getBaseUrl();
         $endpoint = $baseUrl . '/api/v1/tracking/session';
 
         $payload = [
@@ -144,7 +157,7 @@ class Tracker
      */
     private function recordView(int $sessionId, string $currentPage, ?string $entry = null, ?string $exit = null, ?int $scrollDepth = null, ?string $endedAt = null): array
     {
-        $baseUrl = Variables::BASE_URL;
+        $baseUrl = $this->getBaseUrl();
         $endpoint = $baseUrl . '/api/v1/tracking/view';
 
         $now = date('c'); // ISO 8601 format
@@ -309,7 +322,7 @@ class Tracker
      */
     public function validateCredentials(): array
     {
-        $baseUrl = Variables::BASE_URL;
+        $baseUrl = $this->getBaseUrl();
         $endpoint = $baseUrl . '/api/v1/auth/validate';
 
         $payload = [
