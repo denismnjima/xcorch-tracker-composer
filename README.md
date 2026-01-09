@@ -5,7 +5,7 @@ A PHP Composer package for tracking website views to your XCorch dashboard.
 ## Installation
 
 ```bash
-composer require xcorch/hello-world
+composer require xcorch/tracker
 ```
 
 ## Configuration
