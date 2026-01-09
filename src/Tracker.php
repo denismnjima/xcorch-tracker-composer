@@ -88,6 +88,7 @@ class Tracker
         $sessionId = $this->getOrCreateSession();
 
         if ($sessionId === null) {
+            error_log('XCorch Tracker: Failed to get or create session');
             return; // Failed to create session, skip tracking
         }
 
@@ -95,7 +96,11 @@ class Tracker
         $currentPage = $this->getCurrentPageUrl();
         
         // Record the view
-        $this->recordView($sessionId, $currentPage);
+        $result = $this->recordView($sessionId, $currentPage);
+        
+        if (!$result['success']) {
+            error_log('XCorch Tracker: Failed to record view - ' . ($result['error'] ?? 'Unknown error') . ' (HTTP: ' . ($result['http_code'] ?? 'N/A') . ')');
+        }
     }
 
     /**
@@ -122,9 +127,11 @@ class Tracker
             $sessionId = $result['data']['session_id'];
             // Set cookie (expires in 30 days)
             setcookie($cookieName, (string) $sessionId, time() + (30 * 24 * 60 * 60), '/');
+            error_log('XCorch Tracker: Session created successfully - ID: ' . $sessionId);
             return $sessionId;
         }
 
+        error_log('XCorch Tracker: Failed to create session - ' . json_encode($result));
         return null;
     }
 
@@ -180,7 +187,14 @@ class Tracker
             $payload['ended_at'] = $endedAt;
         }
 
-        return $this->makeApiRequest($endpoint, $payload);
+        $result = $this->makeApiRequest($endpoint, $payload);
+        
+        // Log for debugging
+        if (!$result['success']) {
+            error_log('XCorch Tracker: View recording failed. Payload: ' . json_encode($payload) . ' Response: ' . json_encode($result));
+        }
+        
+        return $result;
     }
 
     /**
