@@ -1,0 +1,14 @@
+{
+  "name": "xcorch/hello-world",
+  "description": "A simple Hello World PHP package",
+  "type": "library",
+  "license": "MIT",
+  "autoload": {
+    "psr-4": {
+      "xcorch\\HelloWorld\\": "src/"
+    }
+  },
+  "require": {
+    "php": ">=8.0"
+  }
+}
