@@ -72,24 +72,32 @@ class Tracker
 
     /**
      * Main tracking function - call this to track page views and other events
+     * Returns JavaScript code to track scroll depth and end time
      */
-    public function track(): void
+    public function track(): string
     {
-        $this->recordPageView();
-        // Add other tracking functions here in the future
+        $viewData = $this->recordPageView();
+        
+        if ($viewData === null) {
+            return ''; // Failed to record, return empty string
+        }
+        
+        // Return JavaScript to track scroll depth and end time
+        return $this->getTrackingScript($viewData['view_id'], $viewData['session_id']);
     }
 
     /**
      * Records a page view - checks for session in cookies, creates one if needed, then records the view
+     * Returns view data if successful, null otherwise
      */
-    private function recordPageView(): void
+    private function recordPageView(): ?array
     {
         // Get or create session
         $sessionId = $this->getOrCreateSession();
 
         if ($sessionId === null) {
             error_log('XCorch Tracker: Failed to get or create session');
-            return; // Failed to create session, skip tracking
+            return null; // Failed to create session, skip tracking
         }
 
         // Get current page URL
@@ -100,7 +108,14 @@ class Tracker
         
         if (!$result['success']) {
             error_log('XCorch Tracker: Failed to record view - ' . ($result['error'] ?? 'Unknown error') . ' (HTTP: ' . ($result['http_code'] ?? 'N/A') . ')');
+            return null;
         }
+        
+        // Return view data for JavaScript tracking
+        return [
+            'view_id' => $result['data']['view_id'] ?? null,
+            'session_id' => $sessionId
+        ];
     }
 
     /**
@@ -200,6 +215,124 @@ class Tracker
         }
         
         return $result;
+    }
+
+    /**
+     * Updates a view with scroll depth and end time
+     */
+    public function updateView(int $sessionId, string $currentPage, int $scrollDepth, string $endedAt): array
+    {
+        $baseUrl = $this->getBaseUrl();
+        $endpoint = $baseUrl . '/api/v1/tracking/view';
+
+        $payload = [
+            'api_key' => $this->apiKey,
+            'site_code' => $this->websiteCode,
+            'session_id' => $sessionId,
+            'entry' => date('c'), // Current time as entry
+            'current_page' => $currentPage,
+            'scroll_depth' => $scrollDepth,
+            'ended_at' => $endedAt,
+            'exit' => $endedAt
+        ];
+
+        return $this->makeApiRequest($endpoint, $payload);
+    }
+
+    /**
+     * Gets the JavaScript tracking script for scroll depth and end time
+     */
+    private function getTrackingScript(?int $viewId, int $sessionId): string
+    {
+        if ($viewId === null) {
+            return ''; // No view ID, can't track
+        }
+
+        $baseUrl = $this->getBaseUrl();
+        $updateEndpoint = htmlspecialchars($baseUrl . '/api/v1/tracking/view', ENT_QUOTES, 'UTF-8');
+        $currentPage = htmlspecialchars($this->getCurrentPageUrl(), ENT_QUOTES, 'UTF-8');
+        $apiKey = htmlspecialchars($this->apiKey, ENT_QUOTES, 'UTF-8');
+        $siteCode = htmlspecialchars($this->websiteCode, ENT_QUOTES, 'UTF-8');
+        
+        $entryTime = date('c');
+        
+        return <<<SCRIPT
+<script>
+(function() {
+    var sessionId = {$sessionId};
+    var currentPage = '{$currentPage}';
+    var entryTime = '{$entryTime}';
+    var maxScroll = 0;
+    var startTime = Date.now();
+    var updateSent = false;
+    
+    // Track scroll depth
+    function trackScroll() {
+        var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        var documentHeight = document.documentElement.scrollHeight;
+        var windowHeight = window.innerHeight;
+        var scrollPercent = Math.round(((scrollTop + windowHeight) / documentHeight) * 100);
+        
+        if (scrollPercent > maxScroll) {
+            maxScroll = scrollPercent;
+        }
+    }
+    
+    // Send update with scroll depth and end time
+    function sendUpdate() {
+        if (updateSent) return;
+        updateSent = true;
+        
+        var endTime = new Date().toISOString();
+        var timeOnPage = Math.round((Date.now() - startTime) / 1000); // seconds
+        
+        var payload = {
+            api_key: '{$apiKey}',
+            site_code: '{$siteCode}',
+            session_id: sessionId,
+            entry: entryTime,
+            current_page: currentPage,
+            scroll_depth: maxScroll,
+            ended_at: endTime,
+            exit: endTime
+        };
+        
+        // Use sendBeacon for reliable delivery on page unload
+        if (navigator.sendBeacon) {
+            var blob = new Blob([JSON.stringify(payload)], {type: 'application/json'});
+            navigator.sendBeacon('{$updateEndpoint}', blob);
+        } else {
+            // Fallback to fetch
+            fetch('{$updateEndpoint}', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+                keepalive: true
+            }).catch(function(err) {
+                console.error('XCorch Tracker: Failed to send update', err);
+            });
+        }
+    }
+    
+    // Track scroll events
+    window.addEventListener('scroll', trackScroll, {passive: true});
+    
+    // Track when user leaves page
+    window.addEventListener('beforeunload', sendUpdate);
+    window.addEventListener('pagehide', sendUpdate);
+    
+    // Also send update when page is visible and user has scrolled
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            sendUpdate();
+        }
+    });
+    
+    // Track initial scroll position
+    trackScroll();
+})();
+</script>
+SCRIPT;
     }
 
     /**

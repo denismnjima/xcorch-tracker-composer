@@ -23,7 +23,7 @@ Your API key and website code can be found in your XCorch app or website dashboa
 
 ### Basic Tracking
 
-Simply call the `track()` method on each page to automatically track page views:
+Simply call the `track()` method on each page to automatically track page views. The method returns JavaScript code that tracks scroll depth and end time:
 
 ```php
 <?php
@@ -33,14 +33,25 @@ require 'vendor/autoload.php';
 use xcorch\Tracker\Tracker;
 
 $tracker = new Tracker();
-$tracker->track();
+echo $tracker->track();
+```
+
+Or in a template/view:
+
+```php
+<?php
+$tracker = new Tracker();
+?>
+<!-- Your page content -->
+<?php echo $tracker->track(); ?>
 ```
 
 The `track()` method will:
 - Check for an existing session in cookies
 - Create a new session if one doesn't exist
-- Record the page view with source URL (domain only, e.g., `google.com`)
+- Record the page view with entry time and source URL (domain only, e.g., `google.com`)
 - Automatically detect device type (mobile/desktop)
+- Return JavaScript that tracks scroll depth and sends end time when the user leaves the page
 
 ### Validate Credentials
 
