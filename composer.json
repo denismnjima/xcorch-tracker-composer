@@ -1,6 +1,6 @@
 {
   "name": "xcorch/tracker",
-  "description": "A simple Hello World PHP package",
+  "description": "A PHP Composer package for tracking website views to your XCorch dashboard",
   "type": "library",
   "license": "MIT",
   "autoload": {
