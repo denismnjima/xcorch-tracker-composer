@@ -8,6 +8,7 @@ class Tracker
 {
     private string $apiKey;
     private string $websiteCode;
+    private array $excludedPatterns = [];
 
     /**
      * Gets the base URL for API requests
@@ -87,11 +88,62 @@ class Tracker
     }
 
     /**
+     * Sets patterns for URLs that should be excluded from tracking
+     * 
+     * @param array $patterns Array of patterns. Can be:
+     *   - String patterns (matched with strpos)
+     *   - Regex patterns (must start and end with /)
+     * 
+     * @example
+     *   $tracker->setExcludedPatterns(['/products/', '/blogs/', '/admin/']);
+     *   $tracker->setExcludedPatterns(['/products/', '/\/blogs\/.*/']); // regex
+     */
+    public function setExcludedPatterns(array $patterns): void
+    {
+        $this->excludedPatterns = $patterns;
+    }
+
+    /**
+     * Checks if the current page should be excluded from tracking
+     */
+    private function isPageExcluded(string $url): bool
+    {
+        if (empty($this->excludedPatterns)) {
+            return false;
+        }
+
+        foreach ($this->excludedPatterns as $pattern) {
+            // Check if it's a regex pattern (starts and ends with /)
+            if (preg_match('/^\/.*\/$/', $pattern)) {
+                if (preg_match($pattern, $url)) {
+                    return true;
+                }
+            } else {
+                // Simple string matching
+                if (strpos($url, $pattern) !== false) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Records a page view - checks for session in cookies, creates one if needed, then records the view
      * Returns view data if successful, null otherwise
      */
     private function recordPageView(): ?array
     {
+        // Get current page URL
+        $currentPage = $this->getCurrentPageUrl();
+        
+        // Check if page should be excluded
+        if ($this->isPageExcluded($currentPage)) {
+            error_log('XCorch Tracker: Page excluded from tracking - ' . $currentPage);
+            return null;
+        }
+
         // Get or create session
         $sessionId = $this->getOrCreateSession();
 
@@ -99,9 +151,6 @@ class Tracker
             error_log('XCorch Tracker: Failed to get or create session');
             return null; // Failed to create session, skip tracking
         }
-
-        // Get current page URL
-        $currentPage = $this->getCurrentPageUrl();
         
         // Record the view
         $result = $this->recordView($sessionId, $currentPage);

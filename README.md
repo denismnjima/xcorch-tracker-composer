@@ -54,6 +54,30 @@ The `track()` method will:
 - Automatically detect device type (mobile/desktop)
 - Return JavaScript that tracks scroll depth and sends end time when the user leaves the page
 
+### Excluding Pages from Tracking
+
+You can exclude dynamic pages (like products, blogs, etc.) from being tracked:
+
+```php
+$tracker = new Tracker();
+
+// Exclude specific URL patterns
+$tracker->setExcludedPatterns([
+    '/products/',
+    '/blogs/',
+    '/admin/',
+    '/\/api\/.*/'  // Regex pattern to exclude all API routes
+]);
+
+echo $tracker->track();
+```
+
+**Pattern Types:**
+- **String patterns**: Simple string matching (e.g., `/products/` will exclude any URL containing `/products/`)
+- **Regex patterns**: Must start and end with `/` (e.g., `/\/blogs\/.*/` will exclude all blog URLs)
+
+**Note:** Excluded pages will not create sessions or record views, but will still return empty JavaScript (no tracking code).
+
 ### Validate Credentials
 
 You can validate your API key and website code:
