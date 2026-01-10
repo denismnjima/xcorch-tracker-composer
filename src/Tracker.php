@@ -161,8 +161,11 @@ class Tracker
         }
         
         // Return view data for JavaScript tracking
+        // Support both 'id' (new) and 'view_id' (backward compatibility)
+        $viewId = $result['data']['id'] ?? $result['data']['view_id'] ?? null;
+        
         return [
-            'view_id' => $result['data']['view_id'] ?? null,
+            'view_id' => $viewId,
             'session_id' => $sessionId
         ];
     }
@@ -267,25 +270,29 @@ class Tracker
     }
 
     /**
-     * Updates a view with scroll depth and end time
+     * Updates a view with scroll depth and/or end time using the view ID
+     * 
+     * @param int $viewId The view ID to update
+     * @param int|null $scrollDepth Scroll depth (0-100), null to skip
+     * @param string|null $endedAt End time in ISO 8601 format, null to skip
      */
-    public function updateView(int $sessionId, string $currentPage, int $scrollDepth, string $endedAt): array
+    public function updateView(int $viewId, ?int $scrollDepth = null, ?string $endedAt = null): array
     {
         $baseUrl = $this->getBaseUrl();
-        $endpoint = $baseUrl . '/api/v1/tracking/view';
+        $endpoint = $baseUrl . '/api/v1/tracking/view/' . $viewId;
 
-        $payload = [
-            'api_key' => $this->apiKey,
-            'site_code' => $this->websiteCode,
-            'session_id' => $sessionId,
-            'entry' => date('c'), // Current time as entry
-            'current_page' => $currentPage,
-            'scroll_depth' => $scrollDepth,
-            'ended_at' => $endedAt,
-            'exit' => $endedAt
-        ];
+        $payload = [];
 
-        return $this->makeApiRequest($endpoint, $payload);
+        if ($scrollDepth !== null) {
+            $payload['scroll_depth'] = $scrollDepth;
+        }
+
+        if ($endedAt !== null) {
+            $payload['ended_at'] = $endedAt;
+        }
+
+        // Use PUT method for updates
+        return $this->makeApiRequest($endpoint, $payload, 'PUT');
     }
 
     /**
@@ -298,24 +305,19 @@ class Tracker
         }
 
         $baseUrl = $this->getBaseUrl();
-        $updateEndpoint = htmlspecialchars($baseUrl . '/api/v1/tracking/view', ENT_QUOTES, 'UTF-8');
-        $currentPage = htmlspecialchars($this->getCurrentPageUrl(), ENT_QUOTES, 'UTF-8');
-        $apiKey = htmlspecialchars($this->apiKey, ENT_QUOTES, 'UTF-8');
-        $siteCode = htmlspecialchars($this->websiteCode, ENT_QUOTES, 'UTF-8');
-        
-        $entryTime = date('c');
+        $updateEndpoint = htmlspecialchars($baseUrl . '/api/v1/tracking/view/' . $viewId, ENT_QUOTES, 'UTF-8');
         
         return <<<SCRIPT
 <script>
 (function() {
-    var sessionId = {$sessionId};
-    var currentPage = '{$currentPage}';
-    var entryTime = '{$entryTime}';
+    var viewId = {$viewId};
     var maxScroll = 0;
+    var lastUpdateScroll = 0;
     var startTime = Date.now();
     var updateSent = false;
+    var updateEndpoint = '{$updateEndpoint}';
     
-    // Track scroll depth
+    // Track scroll depth and send incremental updates
     function trackScroll() {
         var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
         var documentHeight = document.documentElement.scrollHeight;
@@ -324,56 +326,65 @@ class Tracker
         
         if (scrollPercent > maxScroll) {
             maxScroll = scrollPercent;
+            
+            // Send incremental update if scroll depth increased significantly (every 25%)
+            if (maxScroll - lastUpdateScroll >= 25) {
+                sendScrollUpdate(maxScroll);
+                lastUpdateScroll = maxScroll;
+            }
         }
     }
     
-    // Send update with scroll depth and end time
-    function sendUpdate() {
+    // Send incremental scroll depth update
+    function sendScrollUpdate(scrollDepth) {
+        var payload = {
+            scroll_depth: scrollDepth
+        };
+        
+        fetch(updateEndpoint, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+            keepalive: true
+        }).catch(function(err) {
+            console.error('XCorch Tracker: Failed to send scroll update', err);
+        });
+    }
+    
+    // Send final update with scroll depth and end time
+    function sendFinalUpdate() {
         if (updateSent) return;
         updateSent = true;
         
         var endTime = new Date().toISOString();
-        var timeOnPage = Math.round((Date.now() - startTime) / 1000); // seconds
-        
         var payload = {
-            api_key: '{$apiKey}',
-            site_code: '{$siteCode}',
-            session_id: sessionId,
-            entry: entryTime,
-            current_page: currentPage,
             scroll_depth: maxScroll,
-            ended_at: endTime,
-            exit: endTime
+            ended_at: endTime
         };
         
-        // Use sendBeacon for reliable delivery on page unload
-        if (navigator.sendBeacon) {
-            var blob = new Blob([JSON.stringify(payload)], {type: 'application/json'});
-            navigator.sendBeacon('{$updateEndpoint}', blob);
-        } else {
-            // Fallback to fetch
-            fetch('{$updateEndpoint}', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload),
-                keepalive: true
-            }).catch(function(err) {
-                console.error('XCorch Tracker: Failed to send update', err);
-            });
-        }
+        // Use fetch with keepalive for reliable delivery on page unload
+        // Note: sendBeacon doesn't support PUT method, so we use fetch
+        fetch(updateEndpoint, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+            keepalive: true
+        }).catch(function(err) {
+            console.error('XCorch Tracker: Failed to send final update', err);
+        });
     }
     
     // Track scroll events
     window.addEventListener('scroll', trackScroll, {passive: true});
     
     // Track when user leaves page
-    window.addEventListener('beforeunload', sendUpdate);
-    window.addEventListener('pagehide', sendUpdate);
+    window.addEventListener('beforeunload', sendFinalUpdate);
+    window.addEventListener('pagehide', sendFinalUpdate);
     
-    // Also send update when page is visible and user has scrolled
+    // Also send update when page becomes hidden
     document.addEventListener('visibilitychange', function() {
         if (document.hidden) {
-            sendUpdate();
+            sendFinalUpdate();
         }
     });
     
@@ -387,11 +398,17 @@ SCRIPT;
     /**
      * Makes an API request and returns the response
      */
-    private function makeApiRequest(string $endpoint, array $payload): array
+    private function makeApiRequest(string $endpoint, array $payload, string $method = 'POST'): array
     {
         $ch = curl_init($endpoint);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
+        
+        if ($method === 'PUT' || $method === 'PATCH') {
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+        } else {
+            curl_setopt($ch, CURLOPT_POST, true);
+        }
+        
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Content-Type: application/json',
