@@ -96,7 +96,6 @@ class Tracker
      * 
      * @example
      *   $tracker->setExcludedPatterns(['/products/', '/blogs/', '/admin/']);
-     *   $tracker->setExcludedPatterns(['/products/', '/\/blogs\/.*/']); // regex
      */
     public function setExcludedPatterns(array $patterns): void
     {
