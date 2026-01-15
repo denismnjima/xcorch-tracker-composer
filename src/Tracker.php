@@ -93,6 +93,10 @@ class Tracker
      * @param array $patterns Array of patterns. Can be:
      *   - String patterns (matched with strpos)
      *   - Regex patterns (must start and end with /)
+     * 
+     * @example
+     *   $tracker->setExcludedPatterns(['/products/', '/blogs/', '/admin/']);
+     *   $tracker->setExcludedPatterns(['/products/', '/\/blogs\/.*/']); // regex
      */
     public function setExcludedPatterns(array $patterns): void
     {
@@ -150,6 +154,43 @@ class Tracker
         
         // Record the view
         $result = $this->recordView($sessionId, $currentPage);
+        
+        // If session is invalid, create a new session and retry
+        if (!$result['success']) {
+            $errorMsg = strtolower($result['error'] ?? '');
+            $isSessionError = (
+                strpos($errorMsg, 'session') !== false || 
+                strpos($errorMsg, 'invalid') !== false ||
+                ($result['http_code'] ?? 0) === 404 ||
+                (isset($result['data']['errors']['session_id']) && 
+                 strpos(strtolower($result['data']['errors']['session_id'][0] ?? ''), 'invalid') !== false)
+            );
+            
+            if ($isSessionError) {
+                error_log('XCorch Tracker: Session invalid, creating new session and retrying');
+                
+                // Clear the invalid session cookie
+                $cookieName = 'xcorch_session_id';
+                setcookie($cookieName, '', time() - 3600, '/');
+                unset($_COOKIE[$cookieName]);
+                
+                // Create a new session
+                $sourceUrl = $this->getSourceUrl();
+                $deviceType = $this->detectDeviceType();
+                $newSessionResult = $this->createSession($sourceUrl, $deviceType);
+                
+                if ($newSessionResult['success'] && isset($newSessionResult['data']['session_id'])) {
+                    $newSessionId = $newSessionResult['data']['session_id'];
+                    // Set new cookie
+                    setcookie($cookieName, (string) $newSessionId, time() + (30 * 24 * 60 * 60), '/');
+                    error_log('XCorch Tracker: New session created after invalid session - ID: ' . $newSessionId);
+                    
+                    // Retry recording the view with the new session
+                    $result = $this->recordView($newSessionId, $currentPage);
+                    $sessionId = $newSessionId;
+                }
+            }
+        }
         
         if (!$result['success']) {
             error_log('XCorch Tracker: Failed to record view - ' . ($result['error'] ?? 'Unknown error') . ' (HTTP: ' . ($result['http_code'] ?? 'N/A') . ')');
@@ -265,7 +306,7 @@ class Tracker
         if (!$result['success']) {
             error_log('XCorch Tracker: View recording failed. Payload: ' . json_encode($payload) . ' Response: ' . json_encode($result));
         } else {
-            error_log('XCorch Tracker: View recorded successfully for session ' . $sessionId . '. Response: ' . json_encode($result['data'] ?? []));
+            error_log('XCorch Tracker: View recorded successfully for session ' . $sessionId);
         }
         
         return $result;
@@ -303,16 +344,11 @@ class Tracker
     private function getTrackingScript(?int $viewId, int $sessionId): string
     {
         if ($viewId === null) {
-            error_log('XCorch Tracker: Cannot generate tracking script - view ID is null');
             return ''; // No view ID, can't track
         }
 
         $baseUrl = $this->getBaseUrl();
         $updateEndpoint = htmlspecialchars($baseUrl . '/api/v1/tracking/view/' . $viewId, ENT_QUOTES, 'UTF-8');
-        $apiKey = htmlspecialchars($this->apiKey, ENT_QUOTES, 'UTF-8');
-        $siteCode = htmlspecialchars($this->websiteCode, ENT_QUOTES, 'UTF-8');
-        
-        error_log('XCorch Tracker: Generating tracking script for view ID: ' . $viewId);
         
         return <<<SCRIPT
 <script>
@@ -345,8 +381,6 @@ class Tracker
     // Send incremental scroll depth update
     function sendScrollUpdate(scrollDepth) {
         var payload = {
-            api_key: '{$apiKey}',
-            site_code: '{$siteCode}',
             scroll_depth: scrollDepth
         };
         
@@ -355,10 +389,6 @@ class Tracker
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload),
             keepalive: true
-        }).then(function(response) {
-            if (!response.ok) {
-                console.error('XCorch Tracker: Scroll update failed', response.status, response.statusText);
-            }
         }).catch(function(err) {
             console.error('XCorch Tracker: Failed to send scroll update', err);
         });
@@ -371,8 +401,6 @@ class Tracker
         
         var endTime = new Date().toISOString();
         var payload = {
-            api_key: '{$apiKey}',
-            site_code: '{$siteCode}',
             scroll_depth: maxScroll,
             ended_at: endTime
         };
@@ -384,10 +412,6 @@ class Tracker
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload),
             keepalive: true
-        }).then(function(response) {
-            if (!response.ok) {
-                console.error('XCorch Tracker: Final update failed', response.status, response.statusText);
-            }
         }).catch(function(err) {
             console.error('XCorch Tracker: Failed to send final update', err);
         });
