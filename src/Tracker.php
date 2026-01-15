@@ -265,7 +265,7 @@ class Tracker
         if (!$result['success']) {
             error_log('XCorch Tracker: View recording failed. Payload: ' . json_encode($payload) . ' Response: ' . json_encode($result));
         } else {
-            error_log('XCorch Tracker: View recorded successfully for session ' . $sessionId);
+            error_log('XCorch Tracker: View recorded successfully for session ' . $sessionId . '. Response: ' . json_encode($result['data'] ?? []));
         }
         
         return $result;
