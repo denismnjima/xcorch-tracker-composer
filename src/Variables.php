@@ -4,5 +4,5 @@ namespace xcorch\Tracker;
 
 class Variables
 {
-    public const BASE_URL = 'http://localhost:8000';
+    public const BASE_URL = 'https://xcorch.ze.co.ke';
 }
