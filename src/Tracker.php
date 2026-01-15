@@ -93,10 +93,6 @@ class Tracker
      * @param array $patterns Array of patterns. Can be:
      *   - String patterns (matched with strpos)
      *   - Regex patterns (must start and end with /)
-     * 
-     * @example
-     *   $tracker->setExcludedPatterns(['/products/', '/blogs/', '/admin/']);
-     *   $tracker->setExcludedPatterns(['/products/', '/\/blogs\/.*/']); // regex
      */
     public function setExcludedPatterns(array $patterns): void
     {
