@@ -164,6 +164,12 @@ class Tracker
         // Support both 'id' (new) and 'view_id' (backward compatibility)
         $viewId = $result['data']['id'] ?? $result['data']['view_id'] ?? null;
         
+        if ($viewId === null) {
+            error_log('XCorch Tracker: View ID not found in response. Response data: ' . json_encode($result['data'] ?? []));
+        } else {
+            error_log('XCorch Tracker: View ID extracted successfully: ' . $viewId);
+        }
+        
         return [
             'view_id' => $viewId,
             'session_id' => $sessionId
@@ -301,11 +307,16 @@ class Tracker
     private function getTrackingScript(?int $viewId, int $sessionId): string
     {
         if ($viewId === null) {
+            error_log('XCorch Tracker: Cannot generate tracking script - view ID is null');
             return ''; // No view ID, can't track
         }
 
         $baseUrl = $this->getBaseUrl();
         $updateEndpoint = htmlspecialchars($baseUrl . '/api/v1/tracking/view/' . $viewId, ENT_QUOTES, 'UTF-8');
+        $apiKey = htmlspecialchars($this->apiKey, ENT_QUOTES, 'UTF-8');
+        $siteCode = htmlspecialchars($this->websiteCode, ENT_QUOTES, 'UTF-8');
+        
+        error_log('XCorch Tracker: Generating tracking script for view ID: ' . $viewId);
         
         return <<<SCRIPT
 <script>
@@ -338,6 +349,8 @@ class Tracker
     // Send incremental scroll depth update
     function sendScrollUpdate(scrollDepth) {
         var payload = {
+            api_key: '{$apiKey}',
+            site_code: '{$siteCode}',
             scroll_depth: scrollDepth
         };
         
@@ -346,6 +359,10 @@ class Tracker
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload),
             keepalive: true
+        }).then(function(response) {
+            if (!response.ok) {
+                console.error('XCorch Tracker: Scroll update failed', response.status, response.statusText);
+            }
         }).catch(function(err) {
             console.error('XCorch Tracker: Failed to send scroll update', err);
         });
@@ -358,6 +375,8 @@ class Tracker
         
         var endTime = new Date().toISOString();
         var payload = {
+            api_key: '{$apiKey}',
+            site_code: '{$siteCode}',
             scroll_depth: maxScroll,
             ended_at: endTime
         };
@@ -369,6 +388,10 @@ class Tracker
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload),
             keepalive: true
+        }).then(function(response) {
+            if (!response.ok) {
+                console.error('XCorch Tracker: Final update failed', response.status, response.statusText);
+            }
         }).catch(function(err) {
             console.error('XCorch Tracker: Failed to send final update', err);
         });
